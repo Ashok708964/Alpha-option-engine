@@ -5723,7 +5723,7 @@ Provide 4 to 6 authentic, recent headlines.`;
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, allowedHosts: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
