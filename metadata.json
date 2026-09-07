@@ -1,0 +1,6 @@
+{
+  "name": "OmniAlpha F&O Quantitative Strategy Engine",
+  "description": "Institutional-grade Futures & Options quantitative trading strategy system with real-time WhatsApp and Telegram notification engine for Buy/Sell signals, order executions, and target/SL hits, 8-factor confluence locking, volume profile POC, and HFT order flow.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
