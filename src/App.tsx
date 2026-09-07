@@ -75,7 +75,6 @@ import { VolatilitySuiteTerminal } from "./components/VolatilitySuiteTerminal";
 import { SviSurfaceTerminal } from "./components/SviSurfaceTerminal";
 import { CosmosDbRecorderTerminal } from "./components/CosmosDbRecorderTerminal";
 import { DatabasesTerminal } from "./components/DatabasesTerminal";
-import { FloatingAiChatDock } from "./components/FloatingAiChatDock";
 import { RealtimeStrategyTerminal } from "./components/RealtimeStrategyTerminal";
 import { generateOperationsResearchBundle } from "./utils/stochasticEngine";
 import { UnifiedNotificationCenter } from "./components/UnifiedNotificationCenter";
@@ -1724,14 +1723,6 @@ export default function App() {
           </div>
         )}
       </main>
-
-      {/* Floating AI Chat Dock with Live Running Suggestions Above Chat Window */}
-      <FloatingAiChatDock
-        onOpenFullModal={() => setIsAIModalOpen(true)}
-        onExecutePrompt={() => setIsAIModalOpen(true)}
-        indexSymbol={currentIndex.symbol}
-        confluenceScore={confluence.totalScore}
-      />
 
       {/* AI Strategist Modal */}
       <AIStrategistModal

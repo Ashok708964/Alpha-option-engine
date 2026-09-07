@@ -2,6 +2,10 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import { initApiRouting } from './utils/api.ts';
+
+// Initialize cross-origin API routing for Cloudflare Pages <-> Azure VM
+initApiRouting();
 
 // Global resilience handler to catch and suppress third-party cross-origin script errors
 if (typeof window !== 'undefined') {

@@ -5,11 +5,28 @@ import { exec } from "child_process";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import cors from "cors";
+import { CosmosClient } from "@azure/cosmos";
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
+
+// Cross-Origin Resource Sharing (CORS) for Cloudflare Pages and external frontends
+const rawCorsOrigin = process.env.CORS_ORIGIN || "*";
+const allowedOrigins = rawCorsOrigin === "*"
+  ? true
+  : rawCorsOrigin.split(",").map((s) => s.trim());
+
+app.use(
+  cors({
+    origin: allowedOrigins,
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  })
+);
 
 app.use(express.json());
 
@@ -1652,6 +1669,27 @@ const cosmosConfig: CosmosConfigState = {
   maxBatchSize: 200,
 };
 
+// Live Azure Cosmos DB Client Instance
+let liveCosmosClient: CosmosClient | null = null;
+
+function getCosmosDatabase() {
+  if (!cosmosConfig.endpoint || !cosmosConfig.primaryKey) return null;
+  if (!liveCosmosClient) {
+    try {
+      liveCosmosClient = new CosmosClient({
+        endpoint: cosmosConfig.endpoint,
+        key: cosmosConfig.primaryKey,
+      });
+      cosmosTelemetry.status = "CONNECTED";
+    } catch (e: any) {
+      cosmosTelemetry.status = "ERROR";
+      cosmosTelemetry.lastErrorMessage = e?.message || "Cosmos client connection failed";
+      return null;
+    }
+  }
+  return liveCosmosClient.database(cosmosConfig.databaseId);
+}
+
 // In-memory high-throughput buffers
 let tbtTickBuffer: any[] = [];
 let tradeLedgerBuffer: any[] = [];
@@ -1727,6 +1765,17 @@ setInterval(() => {
       recentCommittedBatches.unshift(batchDoc);
       if (recentCommittedBatches.length > 100) recentCommittedBatches.pop();
 
+      // Asynchronously commit to real Azure Cosmos DB container if credentials provided
+      const liveDb = getCosmosDatabase();
+      if (liveDb) {
+        liveDb
+          .container(cosmosConfig.collectionTbt)
+          .items.create(batchDoc)
+          .catch((err: any) => {
+            cosmosTelemetry.lastErrorMessage = `Cosmos TBT commit: ${err?.message || err}`;
+          });
+      }
+
       cosmosTelemetry.totalTbtBatchesCommitted += 1;
       cosmosTelemetry.totalTbtTicksRecorded += ticks.length;
       cosmosTelemetry.lastCommittedAt = now.toISOString();
@@ -1750,6 +1799,17 @@ setInterval(() => {
       };
       recordedTradesStore.unshift(tradeDoc);
       if (recordedTradesStore.length > 200) recordedTradesStore.pop();
+
+      const liveDb = getCosmosDatabase();
+      if (liveDb) {
+        liveDb
+          .container(cosmosConfig.collectionTrades)
+          .items.create(tradeDoc)
+          .catch((err: any) => {
+            cosmosTelemetry.lastErrorMessage = `Cosmos Trade commit: ${err?.message || err}`;
+          });
+      }
+
       cosmosTelemetry.totalTradesRecorded += 1;
     });
   }
@@ -1769,6 +1829,17 @@ setInterval(() => {
       };
       recordedAuditLogsStore.unshift(logDoc);
       if (recordedAuditLogsStore.length > 200) recordedAuditLogsStore.pop();
+
+      const liveDb = getCosmosDatabase();
+      if (liveDb) {
+        liveDb
+          .container(cosmosConfig.collectionAuditLogs)
+          .items.create(logDoc)
+          .catch((err: any) => {
+            cosmosTelemetry.lastErrorMessage = `Cosmos Log commit: ${err?.message || err}`;
+          });
+      }
+
       cosmosTelemetry.totalAuditLogsRecorded += 1;
     });
   }
@@ -1887,6 +1958,11 @@ app.post("/api/cosmos/config", (req, res) => {
   if (collectionAuditLogs !== undefined) cosmosConfig.collectionAuditLogs = collectionAuditLogs;
   if (isRecordingActive !== undefined) cosmosConfig.isRecordingActive = Boolean(isRecordingActive);
   if (bufferFlushIntervalMs !== undefined) cosmosConfig.bufferFlushIntervalMs = Number(bufferFlushIntervalMs);
+
+  // If credentials or endpoint changed, reset client handle so it re-authenticates
+  if (endpoint !== undefined || primaryKey !== undefined || databaseId !== undefined) {
+    liveCosmosClient = null;
+  }
 
   res.json({
     success: true,
