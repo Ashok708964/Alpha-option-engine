@@ -99,7 +99,16 @@ export const BrokerGatewayModal: React.FC<BrokerGatewayModalProps> = ({
   const [angelClientCode, setAngelClientCode] = useState<string>("A108291");
   const [angelPin, setAngelPin] = useState<string>("");
   const [angelTotpSecret, setAngelTotpSecret] = useState<string>("");
+  const [angelTotpCode, setAngelTotpCode] = useState<string>("");
   const [angelAccessToken, setAngelAccessToken] = useState<string>("");
+  const [angelShowAdvanced, setAngelShowAdvanced] = useState<boolean>(false);
+  const [angelServerStatus, setAngelServerStatus] = useState<{
+    isConfigured: boolean;
+    serverHasCredentials: boolean;
+    clientCode?: string;
+    hasPin?: boolean;
+    hasTotpSecret?: boolean;
+  } | null>(null);
 
   // 5. Zerodha (Kite Connect v3) Credentials
   const [zerodhaApiKey, setZerodhaApiKey] = useState<string>("kite_pro_99182");
@@ -204,6 +213,29 @@ export const BrokerGatewayModal: React.FC<BrokerGatewayModalProps> = ({
     }
   }, [brokerState.isConnected, brokerState.broker]);
 
+  // Fetch Angel One server status and pre-fill server-configured client code
+  useEffect(() => {
+    if (selectedBroker === "ANGEL_ONE" || isOpen) {
+      fetch("/api/broker/angelone/status")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data) {
+            setAngelServerStatus({
+              isConfigured: Boolean(data.server_has_credentials || data.is_configured),
+              serverHasCredentials: Boolean(data.server_has_credentials || data.is_configured),
+              clientCode: data.client_code,
+              hasPin: Boolean(data.pin_configured),
+              hasTotpSecret: Boolean(data.totp_secret_configured),
+            });
+            if (data.client_code && (angelClientCode === "A108291" || !angelClientCode)) {
+              setAngelClientCode(data.client_code);
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, [selectedBroker, isOpen]);
+
   const handleQuickDemoFill = () => {
     setEnvironment("SANDBOX");
     setErrorMessage(null);
@@ -255,9 +287,9 @@ export const BrokerGatewayModal: React.FC<BrokerGatewayModalProps> = ({
       activeSecret = secretKey.trim() || "fyers_secret_key_8829";
       activeToken = accessToken.trim() || "DEMO_FYERS_V3_TOKEN_ACCESS_99482710398471928374";
     } else if (b === "ANGEL_ONE") {
-      activeId = angelClientCode.trim() || angelApiKey.trim() || "A108291";
-      activeSecret = angelPin.trim() || "9921";
-      activeToken = angelAccessToken.trim() || "DEMO_SMART_API_JWT_KEY_6628192847192";
+      activeId = angelClientCode.trim() || angelServerStatus?.clientCode || "A108291";
+      activeSecret = angelPin.trim() || "";
+      activeToken = angelAccessToken.trim() || "SERVER_MANAGED_SESSION";
     } else if (b === "ZERODHA") {
       activeId = zerodhaApiKey.trim() || "kite_pro_99182";
       activeSecret = zerodhaApiSecret.trim() || "kite_secret_7728192";
@@ -278,10 +310,12 @@ export const BrokerGatewayModal: React.FC<BrokerGatewayModalProps> = ({
       zerodhaApiSecret: b === "ZERODHA" ? activeSecret : undefined,
       zerodhaClientId: b === "ZERODHA" ? zerodhaClientId : undefined,
       zerodhaRequestToken: b === "ZERODHA" ? zerodhaRequestToken : undefined,
-      angelOneApiKey: b === "ANGEL_ONE" ? angelApiKey : undefined,
+      angelOneApiKey: b === "ANGEL_ONE" ? (angelApiKey.trim() || undefined) : undefined,
       angelOneClientCode: b === "ANGEL_ONE" ? activeId : undefined,
       angelOnePin: b === "ANGEL_ONE" ? activeSecret : undefined,
-      angelOneTotpSecret: b === "ANGEL_ONE" ? angelTotpSecret : undefined,
+      angelOneTotpSecret: b === "ANGEL_ONE" ? (angelTotpSecret.trim() || undefined) : undefined,
+      angelOneTotpCode: b === "ANGEL_ONE" ? (angelTotpCode.trim() || undefined) : undefined,
+      angelAccessToken: b === "ANGEL_ONE" ? (angelAccessToken.trim() || undefined) : undefined,
       redirectUri: b === "UPSTOX" ? upstoxRedirectUri : redirectUri,
       environment,
       autoSyncQuotes: true,
@@ -581,17 +615,17 @@ export const BrokerGatewayModal: React.FC<BrokerGatewayModalProps> = ({
         return;
       }
     } else if (selectedBroker === "ANGEL_ONE") {
-      activeId = angelClientCode.trim() || angelApiKey.trim();
+      activeId = angelClientCode.trim() || angelServerStatus?.clientCode || "";
       activeSecret = angelPin.trim();
-      activeToken = angelAccessToken.trim();
-      if (!angelClientCode.trim()) {
+      activeToken = angelAccessToken.trim() || "SERVER_MANAGED_SESSION";
+      if (!activeId) {
         setIsConnecting(false);
         setErrorMessage("Angel One Client Code (e.g. A108291) is required.");
         return;
       }
-      if (!angelAccessToken.trim()) {
+      if (!activeSecret && !angelServerStatus?.hasPin && !angelAccessToken.trim()) {
         setIsConnecting(false);
-        setErrorMessage("Angel One SmartAPI JWT Access Token is required. Click '⚡ Fill Demo Sandbox Token' for instant test.");
+        setErrorMessage("Angel One MPIN / Password is required to authenticate your terminal.");
         return;
       }
     } else if (selectedBroker === "ZERODHA") {
@@ -622,10 +656,12 @@ export const BrokerGatewayModal: React.FC<BrokerGatewayModalProps> = ({
       zerodhaApiSecret: selectedBroker === "ZERODHA" ? zerodhaApiSecret.trim() : undefined,
       zerodhaClientId: selectedBroker === "ZERODHA" ? zerodhaClientId.trim() : undefined,
       zerodhaRequestToken: selectedBroker === "ZERODHA" ? zerodhaRequestToken.trim() : undefined,
-      angelOneApiKey: selectedBroker === "ANGEL_ONE" ? angelApiKey.trim() : undefined,
-      angelOneClientCode: selectedBroker === "ANGEL_ONE" ? angelClientCode.trim() : undefined,
-      angelOnePin: selectedBroker === "ANGEL_ONE" ? angelPin.trim() : undefined,
-      angelOneTotpSecret: selectedBroker === "ANGEL_ONE" ? angelTotpSecret.trim() : undefined,
+      angelOneApiKey: selectedBroker === "ANGEL_ONE" ? (angelApiKey.trim() || undefined) : undefined,
+      angelOneClientCode: selectedBroker === "ANGEL_ONE" ? activeId : undefined,
+      angelOnePin: selectedBroker === "ANGEL_ONE" ? (angelPin.trim() || undefined) : undefined,
+      angelOneTotpSecret: selectedBroker === "ANGEL_ONE" ? (angelTotpSecret.trim() || undefined) : undefined,
+      angelOneTotpCode: selectedBroker === "ANGEL_ONE" ? (angelTotpCode.trim() || undefined) : undefined,
+      angelAccessToken: selectedBroker === "ANGEL_ONE" ? (angelAccessToken.trim() || undefined) : undefined,
       redirectUri: selectedBroker === "UPSTOX" ? upstoxRedirectUri.trim() : redirectUri.trim(),
       environment,
       autoSyncQuotes: true,
@@ -639,12 +675,20 @@ export const BrokerGatewayModal: React.FC<BrokerGatewayModalProps> = ({
       setReconnectAttempts(0);
       setReconnectCountdown(reconnectIntervalSec);
       addReconnectLog("SUCCESS", `${selectedBroker} credentials validated and gateway armed.`);
-      setSuccessMessage(`${selectedBroker} Gateway Successfully Synchronized & Armed!`);
+      setSuccessMessage(
+        selectedBroker === "ANGEL_ONE"
+          ? `Angel One SmartAPI Terminal Successfully Connected & Armed!`
+          : `${selectedBroker} Gateway Successfully Synchronized & Armed!`
+      );
       setActiveSubTab("ORDER_DESK");
       fetchPositions(selectedBroker);
       fetchQuotes(selectedBroker);
     } else {
-      setErrorMessage(`Failed to validate ${selectedBroker} credentials. Please check your Client ID & Token.`);
+      setErrorMessage(
+        selectedBroker === "ANGEL_ONE"
+          ? "Failed to authenticate with Angel One SmartAPI. Please verify your Client Code, PIN, or TOTP."
+          : `Failed to validate ${selectedBroker} credentials. Please check your credentials.`
+      );
     }
   };
 
@@ -1438,46 +1482,69 @@ export const BrokerGatewayModal: React.FC<BrokerGatewayModalProps> = ({
                 {/* 4. ANGEL ONE (SMARTAPI V2) SPECIFIC DYNAMIC FIELDS */}
                 {selectedBroker === "ANGEL_ONE" && (
                   <div className="space-y-4">
+                    {/* Server Credentials Status Indicator Banner */}
+                    {angelServerStatus?.serverHasCredentials ? (
+                      <div className="p-3.5 bg-emerald-950/40 border border-emerald-500/30 rounded-lg flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-2.5">
+                          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 mt-1 animate-pulse flex-shrink-0" />
+                          <div>
+                            <div className="text-xs font-bold text-emerald-300 font-mono flex items-center gap-2">
+                              <span>Server-Managed Angel One SmartAPI Active</span>
+                              <span className="px-1.5 py-0.2 bg-emerald-900/60 border border-emerald-600/40 text-emerald-200 rounded text-[9px] font-sans uppercase">
+                                .env Armed
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-emerald-300/80 font-sans mt-0.5 leading-relaxed">
+                              Your server holds the SmartAPI credentials &amp; in-memory RFC 6238 TOTP generator. Enter your <strong>Client Code</strong> and <strong>PIN</strong> below to authenticate your terminal.
+                            </p>
+                          </div>
+                        </div>
+                        {angelServerStatus.hasTotpSecret && (
+                          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-emerald-900/50 border border-emerald-700/40 rounded text-[10px] text-emerald-200 font-mono whitespace-nowrap">
+                            <Key className="w-3 h-3 text-emerald-400" />
+                            <span>Auto TOTP Active</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="p-3.5 bg-slate-900 border border-sky-500/30 rounded-lg flex items-start gap-2.5">
+                        <div className="w-2.5 h-2.5 rounded-full bg-sky-400 mt-1 flex-shrink-0" />
+                        <div className="text-[11px] text-slate-300 font-sans leading-relaxed">
+                          <span className="font-bold text-sky-300">Angel One Direct Terminal Mode:</span> Enter your <strong>Client Code</strong> and <strong>PIN</strong> below to connect to the broker terminal.
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Primary Two Fields: Client Code & PIN */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="text-[10px] text-slate-400 uppercase font-sans font-bold flex items-center justify-between mb-1">
-                          <span>Angel One Client Code (User ID) *</span>
-                          <span className="text-slate-500">e.g. A108291</span>
+                        <label className="text-[10px] text-slate-300 uppercase font-sans font-bold flex items-center justify-between mb-1.5">
+                          <span className="flex items-center gap-1.5">
+                            <Building2 className="w-3.5 h-3.5 text-sky-400" />
+                            <span>Angel One Client Code (User ID) *</span>
+                          </span>
+                          <span className="text-slate-500 text-[9px] font-mono">e.g. A108291</span>
                         </label>
                         <input
                           type="text"
                           required
                           placeholder="e.g. A108291"
                           value={angelClientCode}
-                          onChange={(e) => setAngelClientCode(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-800 rounded p-2.5 text-white font-mono focus:border-sky-500 focus:outline-none"
+                          onChange={(e) => setAngelClientCode(e.target.value.toUpperCase())}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white font-mono text-sm tracking-wider focus:border-sky-500 focus:ring-1 focus:ring-sky-500 focus:outline-none transition-all shadow-inner"
                         />
                       </div>
 
                       <div>
-                        <label className="text-[10px] text-slate-400 uppercase font-sans font-bold flex items-center justify-between mb-1">
-                          <span>Angel One SmartAPI Key *</span>
-                          <span className="text-slate-500">From smartapi.angelbroking.com</span>
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g. smartapi_key_v2_9948"
-                          value={angelApiKey}
-                          onChange={(e) => setAngelApiKey(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-800 rounded p-2.5 text-white font-mono focus:border-sky-500 focus:outline-none"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-[10px] text-slate-400 uppercase font-sans font-bold flex items-center justify-between mb-1">
-                          <span>Angel One PIN / Password *</span>
+                        <label className="text-[10px] text-slate-300 uppercase font-sans font-bold flex items-center justify-between mb-1.5">
+                          <span className="flex items-center gap-1.5">
+                            <Key className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Angel One MPIN / Password *</span>
+                          </span>
                           <button
                             type="button"
                             onClick={() => toggleSecret("angelPin")}
-                            className="text-slate-500 hover:text-slate-300 flex items-center gap-1 text-[10px]"
+                            className="text-slate-400 hover:text-slate-200 flex items-center gap-1 text-[10px]"
                           >
                             {showSecrets["angelPin"] ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
                             <span>{showSecrets["angelPin"] ? "Hide" : "Show"}</span>
@@ -1485,57 +1552,103 @@ export const BrokerGatewayModal: React.FC<BrokerGatewayModalProps> = ({
                         </label>
                         <input
                           type={showSecrets["angelPin"] ? "text" : "password"}
-                          placeholder="••••"
+                          required
+                          placeholder="4-digit MPIN (e.g. 1234)"
                           value={angelPin}
                           onChange={(e) => setAngelPin(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-800 rounded p-2.5 text-white font-mono focus:border-sky-500 focus:outline-none"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-[10px] text-slate-400 uppercase font-sans font-bold flex items-center justify-between mb-1">
-                          <span>TOTP Secret Key / Seed (or Authenticator Code)</span>
-                          <button
-                            type="button"
-                            onClick={() => toggleSecret("angelTotp")}
-                            className="text-slate-500 hover:text-slate-300 flex items-center gap-1 text-[10px]"
-                          >
-                            {showSecrets["angelTotp"] ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                            <span>{showSecrets["angelTotp"] ? "Hide" : "Show"}</span>
-                          </button>
-                        </label>
-                        <input
-                          type={showSecrets["angelTotp"] ? "text" : "password"}
-                          placeholder="16-char TOTP Seed e.g. JBSWY3DPEHPK3PXP"
-                          value={angelTotpSecret}
-                          onChange={(e) => setAngelTotpSecret(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-800 rounded p-2.5 text-white font-mono focus:border-sky-500 focus:outline-none"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white font-mono text-sm tracking-widest focus:border-sky-500 focus:ring-1 focus:ring-sky-500 focus:outline-none transition-all shadow-inner"
                         />
                       </div>
                     </div>
 
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="text-[10px] text-slate-400 uppercase font-sans font-bold">
-                          SmartAPI JWT Access Token *
+                    {/* Optional Real-time Authenticator TOTP (if user doesn't have auto TOTP seed in server env) */}
+                    {(!angelServerStatus?.hasTotpSecret || angelShowAdvanced) && (
+                      <div>
+                        <label className="text-[10px] text-slate-400 uppercase font-sans font-bold flex items-center justify-between mb-1">
+                          <span className="flex items-center gap-1.5">
+                            <Timer className="w-3.5 h-3.5 text-purple-400" />
+                            <span>6-Digit Authenticator TOTP Code (Optional if TOTP seed in server .env)</span>
+                          </span>
+                          <span className="text-slate-500 text-[9px]">Google Authenticator / SmartAPI</span>
                         </label>
-                        <button
-                          type="button"
-                          onClick={handleGenerateAuthUrl}
-                          className="text-[11px] text-sky-400 hover:text-sky-300 font-bold flex items-center gap-1 hover:underline"
-                        >
-                          <ExternalLink className="w-3 h-3" />
-                          <span>Open SmartAPI Console (smartapi.angelbroking.com)</span>
-                        </button>
+                        <input
+                          type="text"
+                          maxLength={6}
+                          placeholder="e.g. 849201"
+                          value={angelTotpCode}
+                          onChange={(e) => setAngelTotpCode(e.target.value.replace(/\D/g, ""))}
+                          className="w-full bg-slate-900 border border-slate-800 rounded p-2.5 text-white font-mono text-sm tracking-widest focus:border-purple-500 focus:outline-none"
+                        />
                       </div>
-                      <textarea
-                        rows={3}
-                        required
-                        placeholder="Paste your Angel One SmartAPI JWT Access Token here"
-                        value={angelAccessToken}
-                        onChange={(e) => setAngelAccessToken(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-800 rounded p-2.5 text-slate-200 font-mono text-[11px] focus:border-sky-500 focus:outline-none"
-                      />
+                    )}
+
+                    {/* Advanced Settings Collapsible: Manual API Key, TOTP Seed & Access Token */}
+                    <div className="border border-slate-800/80 rounded-lg overflow-hidden bg-slate-950/40">
+                      <button
+                        type="button"
+                        onClick={() => setAngelShowAdvanced(!angelShowAdvanced)}
+                        className="w-full px-3.5 py-2.5 flex items-center justify-between text-xs text-slate-400 hover:text-slate-200 transition-colors font-sans"
+                      >
+                        <span className="flex items-center gap-2">
+                          <Terminal className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Advanced Configuration &amp; Manual Credentials Override</span>
+                        </span>
+                        <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${angelShowAdvanced ? "rotate-180" : ""}`} />
+                      </button>
+
+                      {angelShowAdvanced && (
+                        <div className="p-3.5 border-t border-slate-800/80 space-y-3 bg-slate-950/80">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-[10px] text-slate-400 uppercase font-sans font-bold block mb-1">
+                                SmartAPI Key (Override)
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="smartapi_key_v2_9948"
+                                value={angelApiKey}
+                                onChange={(e) => setAngelApiKey(e.target.value)}
+                                className="w-full bg-slate-900 border border-slate-800 rounded p-2 text-white font-mono text-xs focus:border-sky-500 focus:outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-slate-400 uppercase font-sans font-bold block mb-1">
+                                TOTP Secret Seed (Override)
+                              </label>
+                              <input
+                                type={showSecrets["angelTotp"] ? "text" : "password"}
+                                placeholder="16-character Base32 Seed"
+                                value={angelTotpSecret}
+                                onChange={(e) => setAngelTotpSecret(e.target.value)}
+                                className="w-full bg-slate-900 border border-slate-800 rounded p-2 text-white font-mono text-xs focus:border-sky-500 focus:outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-[10px] text-slate-400 uppercase font-sans font-bold">
+                                Manual SmartAPI JWT Access Token (Optional)
+                              </label>
+                              <button
+                                type="button"
+                                onClick={handleGenerateAuthUrl}
+                                className="text-[11px] text-sky-400 hover:text-sky-300 font-bold flex items-center gap-1 hover:underline"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                <span>Open SmartAPI Console</span>
+                              </button>
+                            </div>
+                            <textarea
+                              rows={2}
+                              placeholder="Paste manual JWT access token if bypassing automatic login"
+                              value={angelAccessToken}
+                              onChange={(e) => setAngelAccessToken(e.target.value)}
+                              className="w-full bg-slate-900 border border-slate-800 rounded p-2 text-slate-300 font-mono text-[11px] focus:border-sky-500 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

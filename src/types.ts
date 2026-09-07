@@ -1069,6 +1069,7 @@ export interface BrokerCredentials {
   angelOneClientCode?: string;
   angelOnePin?: string;
   angelOneTotpSecret?: string;
+  angelOneTotpCode?: string;
   angelAccessToken?: string;
   environment: "LIVE" | "SANDBOX";
   autoSyncQuotes: boolean;
