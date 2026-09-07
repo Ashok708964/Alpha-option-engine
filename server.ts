@@ -6,9 +6,31 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import cors from "cors";
-import { CosmosClient } from "@azure/cosmos";
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
+
+// Optional Cloud DB SDKs (safely loaded to avoid crashing if uninstalled)
+let CosmosClientClass: any = null;
+let DynamoDBClientClass: any = null;
+let DynamoDBDocumentClientClass: any = null;
+let PutCommandClass: any = null;
+
+async function loadCloudDbSdk() {
+  try {
+    const cosmosMod = await import("@azure/cosmos");
+    CosmosClientClass = cosmosMod.CosmosClient;
+  } catch (_) {}
+
+  try {
+    const dynamoMod = await import("@aws-sdk/client-dynamodb");
+    DynamoDBClientClass = dynamoMod.DynamoDBClient;
+  } catch (_) {}
+
+  try {
+    const libDynamo = await import("@aws-sdk/lib-dynamodb");
+    DynamoDBDocumentClientClass = libDynamo.DynamoDBDocumentClient;
+    PutCommandClass = libDynamo.PutCommand;
+  } catch (_) {}
+}
+loadCloudDbSdk().catch(() => {});
 
 dotenv.config();
 
@@ -1672,13 +1694,14 @@ const cosmosConfig: CosmosConfigState = {
 };
 
 // Live Azure Cosmos DB Client Instance
-let liveCosmosClient: CosmosClient | null = null;
+let liveCosmosClient: any = null;
 
 function getCosmosDatabase() {
   if (!cosmosConfig.endpoint || !cosmosConfig.primaryKey) return null;
+  if (!CosmosClientClass) return null;
   if (!liveCosmosClient) {
     try {
-      liveCosmosClient = new CosmosClient({
+      liveCosmosClient = new CosmosClientClass({
         endpoint: cosmosConfig.endpoint,
         key: cosmosConfig.primaryKey,
       });
@@ -1711,12 +1734,13 @@ const dynamoConfig: DynamoConfigState = {
   tableAuditLogs: process.env.DYNAMODB_LOGS_TABLE || "algo_audit_logs",
 };
 
-let liveDynamoDocClient: DynamoDBDocumentClient | null = null;
+let liveDynamoDocClient: any = null;
 
-function getDynamoDocClient(): DynamoDBDocumentClient | null {
+function getDynamoDocClient(): any {
   const hasKeys = Boolean(dynamoConfig.accessKeyId && dynamoConfig.secretAccessKey);
   const isAwsConfigured = Boolean(process.env.AWS_REGION && (hasKeys || process.env.AWS_EXECUTION_ENV));
   if (!isAwsConfigured && !hasKeys) return null;
+  if (!DynamoDBClientClass || !DynamoDBDocumentClientClass) return null;
 
   if (!liveDynamoDocClient) {
     try {
@@ -1727,8 +1751,8 @@ function getDynamoDocClient(): DynamoDBDocumentClient | null {
           secretAccessKey: dynamoConfig.secretAccessKey,
         };
       }
-      const rawClient = new DynamoDBClient(clientConfig);
-      liveDynamoDocClient = DynamoDBDocumentClient.from(rawClient, {
+      const rawClient = new DynamoDBClientClass(clientConfig);
+      liveDynamoDocClient = DynamoDBDocumentClientClass.from(rawClient, {
         marshallOptions: { removeUndefinedValues: true },
       });
       cosmosTelemetry.status = "CONNECTED";
@@ -1829,9 +1853,9 @@ setInterval(() => {
       }
 
       // Asynchronously commit to AWS DynamoDB if configured
-      if (liveDynamo) {
+      if (liveDynamo && PutCommandClass) {
         liveDynamo
-          .send(new PutCommand({ TableName: dynamoConfig.tableTbt, Item: batchDoc }))
+          .send(new PutCommandClass({ TableName: dynamoConfig.tableTbt, Item: batchDoc }))
           .catch((err: any) => {
             cosmosTelemetry.lastErrorMessage = `DynamoDB TBT commit: ${err?.message || err}`;
           });
@@ -1871,9 +1895,9 @@ setInterval(() => {
           });
       }
 
-      if (liveDynamo) {
+      if (liveDynamo && PutCommandClass) {
         liveDynamo
-          .send(new PutCommand({ TableName: dynamoConfig.tableTrades, Item: tradeDoc }))
+          .send(new PutCommandClass({ TableName: dynamoConfig.tableTrades, Item: tradeDoc }))
           .catch((err: any) => {
             cosmosTelemetry.lastErrorMessage = `DynamoDB Trade commit: ${err?.message || err}`;
           });
@@ -1909,9 +1933,9 @@ setInterval(() => {
           });
       }
 
-      if (liveDynamo) {
+      if (liveDynamo && PutCommandClass) {
         liveDynamo
-          .send(new PutCommand({ TableName: dynamoConfig.tableAuditLogs, Item: logDoc }))
+          .send(new PutCommandClass({ TableName: dynamoConfig.tableAuditLogs, Item: logDoc }))
           .catch((err: any) => {
             cosmosTelemetry.lastErrorMessage = `DynamoDB Log commit: ${err?.message || err}`;
           });
